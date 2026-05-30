@@ -1,6 +1,6 @@
 # Milliways TestChimp training guide (web)
 
-This guide is for **QA engineers training to become TestChimp platform experts (FDEs)**. You will fork a clean **web** starter repo, stand up local testing infrastructure with TestChimp, author Playwright SmartTests against the Angular demo app, and complete a feature PR exercise end-to-end.
+This guide is for **QA engineers training to become TestChimp platform experts (FDEs)**. You will fork a clean **web** starter repo, stand up local testing infrastructure with TestChimp, author Playwright SmartTests against the Angular demo app, wire up **GitHub Actions CI** for pull requests, and complete a feature PR exercise end-to-end.
 
 **Video tutorials:** [TestChimp YouTube playlist](https://www.youtube.com/watch?v=dTEMjBYy3FI&list=PLJHExFb87jB35CRW_t22rMGyCdR5lFYav)
 
@@ -34,7 +34,7 @@ cd milliways-web-practice
 
 The backend runs in Docker (`docker compose up`). The Angular dev server at `http://localhost:4200` proxies API calls to `http://localhost:3001` via `web/proxy.conf.json`.
 
-**Important:** This starter repo intentionally contains **no** `tests/`, `plans/`, TrueCoverage SDK, or QA seed endpoints. You add those through TestChimp workflows. The app may also include **intentional bugs**—treat discrepancies as learning opportunities for reporting and regression coverage.
+**Important:** This starter repo intentionally contains **no** `tests/`, `plans/`, TrueCoverage SDK, QA seed endpoints, or **GitHub Actions workflows**. You add those through TestChimp workflows. The app may also include **intentional bugs**—treat discrepancies as learning opportunities for reporting and regression coverage.
 
 Quick run (before TestChimp):
 
@@ -142,7 +142,7 @@ npm install
 npm run test:web       # Playwright — Angular app (agent may start ng serve)
 ```
 
-Use headed/debug runs while stabilizing specs; switch to CI-style headless once stable.
+Use headed/debug runs while stabilizing specs; switch to CI-style headless once stable. Keep specs reliable in headless mode—you will run the same suite in GitHub Actions next.
 
 ### 3. Verify results in TestChimp
 
@@ -176,9 +176,142 @@ Or ensure ExploreChimp ran as part of `/testchimp test` Phase 6. Confirm explora
 
 ---
 
+## CI workflow
+
+Complete this section **after** baseline SmartTests pass locally and **before** the [PR testing exercise](#pr-testing-add-coupon-codes). The goal is a GitHub Actions workflow that spins up the full stack in CI and runs SmartTests on every pull request. When you later open the coupon feature PR, that same workflow should run automatically and show a **green check** on the PR.
+
+### Goals
+
+- Add a **GitHub Actions** workflow under `.github/workflows/`.
+- **Start the demo stack** in the runner (Postgres + API via Docker Compose).
+- **Run Playwright SmartTests** from `tests/` against the Angular app.
+- Trigger on **`pull_request`** to `main` (and optionally `workflow_dispatch` for manual runs).
+- Store TestChimp credentials as **GitHub Actions secrets**—never commit API keys.
+
+### Prerequisites
+
+| Item | Detail |
+|------|--------|
+| SmartTests on `main` | Baseline specs merged from the [Test workflow](#test-workflow) |
+| Fork on GitHub | Actions run in **your fork** (enable Actions under **Settings → Actions → General** if needed) |
+| Repo secrets | **Settings → Secrets and variables → Actions → New repository secret** |
+
+Add these secrets (same values as your local MCP / shell):
+
+| Secret | Purpose |
+|--------|---------|
+| `TESTCHIMP_API_KEY` | Authenticates Playwright reporter and TestChimp uploads |
+| `TESTCHIMP_PROJECT_ID` | Links runs to your TestChimp project |
+
+### What the workflow must do
+
+1. **Checkout** the PR branch.
+2. **Install Node.js** (18+; 20 recommended).
+3. **Start the stack** — from repo root:
+   ```bash
+   docker compose up --build -d
+   ```
+   Wait until the API is healthy (`curl -sf http://localhost:3001/health`). You can reuse `./scripts/qa/local-up.sh` or inline the same health poll.
+4. **Install dependencies** — `npm ci` in `web/` and `tests/`.
+5. **Install Playwright browsers** — e.g. `npx playwright install --with-deps chromium` from `tests/`.
+6. **Serve the Angular app** — either:
+   - Start `npm start` in `web/` in the background and wait for `http://localhost:4200`, or
+   - Rely on `webServer` in `playwright.config.js` if init configured it that way.
+7. **Run SmartTests** — from `tests/`:
+   ```bash
+   npm run test:web
+   ```
+   Export `TESTCHIMP_API_KEY`, `TESTCHIMP_PROJECT_ID`, and `CI=true` in the step `env`.
+8. **Upload artifacts on failure** (recommended) — Playwright HTML report / traces from `playwright-report/` or `test-results/`.
+
+### Example workflow (starting point)
+
+Create `.github/workflows/smarttests.yml` on a branch (e.g. `chore/ci-smarttests`), adapt paths and scripts to match your scaffolded `tests/` layout:
+
+```yaml
+name: SmartTests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smarttests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            tests/package-lock.json
+
+      - name: Start backend stack
+        run: ./scripts/qa/local-up.sh
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install SmartTests dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run SmartTests (web)
+        working-directory: tests
+        run: npm run test:web
+        env:
+          CI: true
+          TESTCHIMP_API_KEY: ${{ secrets.TESTCHIMP_API_KEY }}
+          TESTCHIMP_PROJECT_ID: ${{ secrets.TESTCHIMP_PROJECT_ID }}
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/playwright-report/
+          if-no-files-found: ignore
+```
+
+Work with your training agent (`/testchimp init` or a follow-up prompt) to align this file with your actual `playwright.config.js`, npm scripts, and any QA seed endpoints added during init.
+
+### Step-by-step
+
+1. **Create the workflow file** on a dedicated branch; open a PR to `main`.
+2. **Add repository secrets** in GitHub before merging (or the first CI run will fail on missing credentials).
+3. **Merge the CI PR** — confirm the workflow appears under **Actions** and completes successfully on a test PR (e.g. a trivial docs change).
+4. **Fix flakiness in CI** — timing, selectors, or missing `webServer` startup are common; iterate until PR checks are stable.
+
+### CI checklist (before coupon PR exercise)
+
+| Item | Pass? |
+|------|-------|
+| `.github/workflows/*.yml` merged to `main` | |
+| `TESTCHIMP_API_KEY` and `TESTCHIMP_PROJECT_ID` set as repo secrets | |
+| Workflow starts Docker Compose and waits for `/health` | |
+| Angular app reachable at `localhost:4200` during the test job | |
+| `npm run test:web` passes in CI on a PR to `main` | |
+| Failed runs upload a Playwright report artifact (optional but recommended) | |
+| TestChimp shows CI-triggered run history (when reporter is configured) | |
+
+Once this checklist passes, proceed to the coupon PR exercise—CI will run again on that feature branch and should be your proof of end-to-end automation.
+
+---
+
 ## PR testing: add coupon codes
 
-This exercise simulates **real FDE work**: plan in TestChimp → implement on a branch → test with TestChimp → open a PR with tests.
+This exercise simulates **real FDE work**: plan in TestChimp → implement on a branch → test with TestChimp → open a PR with tests. **Your CI workflow from the previous section should run on this PR**—a successful GitHub Actions check is part of the deliverable.
 
 ### Functionality requirement
 
@@ -236,6 +369,7 @@ Proceed with test authoring only after you approve the plan.
 | Missing scenarios were created in TestChimp (real IDs) | |
 | TrueCoverage instrumentation added for new user events | |
 | Tests pass locally in Playwright | |
+| **GitHub Actions check passes on the feature PR** | |
 | Results visible in TestChimp; Plans Insights updated | |
 
 ### Step 5 — Raise PR with tests included
@@ -247,7 +381,9 @@ Push your branch and update the PR to include:
 - Updated `plans/` if scenarios/events changed
 - TrueCoverage instrumentation and event definitions
 
-Request review from your training lead. Be prepared to demo: TestChimp run history, Insights coverage, TrueCoverage events, and ExploreChimp findings for the coupon journey.
+Open the PR against `main` and confirm **SmartTests** (or your workflow name) runs under **Checks**. Fix any CI-only failures before requesting review.
+
+Request review from your training lead. Be prepared to demo: **green GitHub Actions run on the PR**, TestChimp run history, Insights coverage, TrueCoverage events, and ExploreChimp findings for the coupon journey.
 
 ---
 
@@ -259,5 +395,6 @@ Request review from your training lead. Be prepared to demo: TestChimp run histo
 | TrueCoverage | [docs.testchimp.io/truecoverage/intro](https://docs.testchimp.io/truecoverage/intro) |
 | Test planning | [docs.testchimp.io/test-planning/intro](https://docs.testchimp.io/test-planning/intro) |
 | Sample stories/scenarios | [SAMPLE_PLANS.md](./SAMPLE_PLANS.md) |
+| GitHub Actions docs | [docs.github.com/actions](https://docs.github.com/en/actions) |
 | Web setup | [web/README.md](../web/README.md) |
 | Root README | [README.md](../README.md) |

@@ -14,7 +14,9 @@ A demo restaurant stack inspired by The Restaurant at the End of the Universe: *
 
 ## Purpose
 
-This is a **web starter app** for learning [TestChimp](https://testchimp.io). Fork it and add your own SmartTests (Playwright), test plans, TrueCoverage instrumentation, and CI workflows from scratch.
+This is a **web starter app** for learning [TestChimp](https://testchimp.io). Fork it and add your own SmartTests (Playwright), test plans, TrueCoverage instrumentation, GitHub Actions CI, and workflows from scratch.
+
+Follow **`guide/TESTING_GUIDE.md`** in order: baseline SmartTests → **CI on pull requests** → coupon feature PR (where CI should show a green check).
 
 The app features a food ordering flow with a space-themed menu, shopping cart, delivery tracking, and user account — providing UI journeys to practice **web** testing.
 
