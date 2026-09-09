@@ -1,0 +1,15 @@
+{
+  "name": "milliways-smarttests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test -c playwright.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@testchimp/cli": "latest",
+    "@testchimp/playwright": "0.2.27",
+    "dotenv": "^17.2.2",
+    "playwright": "1.63.0"
+  }
+}

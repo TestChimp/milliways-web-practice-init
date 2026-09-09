@@ -1,0 +1,53 @@
+name: Playwright tests
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'plans/knowledge/workflow_plans/**'
+      - '**/TestChimp Platform Sync [Plans]/**'
+
+jobs:
+  playwright:
+    if: ${{ !contains(github.event.pull_request.title, 'TestChimp Platform Sync [Plans]') }}
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: http://localhost:4200
+      TESTCHIMP_API_KEY: ${{ secrets.TESTCHIMP_API_KEY }}
+      TESTCHIMP_EXECUTION_SOURCE: CI
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+      - name: Install SmartTests dependencies
+        run: npm ci
+        working-directory: tests
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: tests
+      - name: Start backend
+        run: docker compose up --build -d
+      - name: Start web app
+        run: npm start > /tmp/milliways-web.log 2>&1 &
+        working-directory: web
+      - name: Wait for web app
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:4200 >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/milliways-web.log
+          exit 1
+        working-directory: tests
+      - name: Run SmartTests
+        run: npx playwright test -c playwright.config.js
+        working-directory: tests
+      - name: Tear down
+        if: always()
+        run: docker compose down

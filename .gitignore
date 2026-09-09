@@ -48,3 +48,12 @@ docker-compose.override.yml
 *.dll
 *.exe
 *.out
+
+# TestChimp Studio OpenCode skills (managed)
+.opencode/skills/
+
+# TestChimp Studio local project config (credentials)
+.testchimp/
+
+# TestChimp Studio OpenCode config (contains credentials)
+opencode.json
